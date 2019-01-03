@@ -29,22 +29,24 @@ if [[ (`uname` == "Linux") || (`uname` == "Darwin") ]]; then
     CURRENT_PLATFORM=`echo \`uname\` | awk '{print tolower($0)}'`
 fi
 
-if [[ "$CURRENT_PLATFORM" == 'windows' ]]; then
-   RUNTIME_ID='win-x64'
-   if [[ "$PROCESSOR_ARCHITECTURE" == 'x86' ]]; then
-      RUNTIME_ID='win-x86'
-   fi
-elif [[ "$CURRENT_PLATFORM" == 'linux' ]]; then
-   RUNTIME_ID="linux-x64"
-   if command -v uname > /dev/null; then
-        CPU_NAME=$(uname -m)
-        case $CPU_NAME in
-            armv7l) RUNTIME_ID="linux-arm";;
-            aarch64) RUNTIME_ID="linux-arm";;
-        esac
+if [[ ${RUNTIME_ID} == '' ]]; then
+    if [[ "$CURRENT_PLATFORM" == 'windows' ]]; then
+    RUNTIME_ID='win-x64'
+    if [[ "$PROCESSOR_ARCHITECTURE" == 'x86' ]]; then
+        RUNTIME_ID='win-x86'
     fi
-elif [[ "$CURRENT_PLATFORM" == 'darwin' ]]; then
-   RUNTIME_ID='osx-x64'
+    elif [[ "$CURRENT_PLATFORM" == 'linux' ]]; then
+    RUNTIME_ID="linux-x64"
+    if command -v uname > /dev/null; then
+            CPU_NAME=$(uname -m)
+            case $CPU_NAME in
+                armv7l) RUNTIME_ID="linux-arm";;
+                aarch64) RUNTIME_ID="linux-arm";;
+            esac
+        fi
+    elif [[ "$CURRENT_PLATFORM" == 'darwin' ]]; then
+    RUNTIME_ID='osx-x64'
+    fi
 fi
 
 # Make sure current platform support publish the dotnet runtime
