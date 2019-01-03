@@ -161,6 +161,34 @@ namespace Microsoft.VisualStudio.Services.Agent.Worker.Release.Artifacts
             return false;
         }
 
+        // Searches for a mounted path the correspond
+        // to a windows share path.
+        // It does that by searching the /proc/mounts for a
+        // mount that matches the share path
+        private string FindLocalMountedPath(string p)
+        {
+            var path = p.Replace("\\", "/");
+            var mounts = File.ReadLines("/proc/mounts");
+            foreach (var mount in mounts)
+            {
+                string[] columns = mount.Split(' ');
+                if (columns.Length >= 3)
+                {
+                    var share = columns[0];
+                    var mountPoint = columns[1];
+                    var filesystem = columns[2];
+                    if (filesystem == "cifs")
+                    {
+                        if (path.ToLower().StartsWith(share.ToLower()))
+                        {
+                            return mountPoint + path.Substring(share.Length);
+                        }
+                    }
+                }
+            }
+            return null;
+        }
+
         private async Task DownloadArtifactAsync(
             IExecutionContext executionContext,
             ServerBuildArtifact buildArtifact,
@@ -174,9 +202,33 @@ namespace Microsoft.VisualStudio.Services.Agent.Worker.Release.Artifacts
                 || string.Equals(buildArtifact.Resource.Type, ArtifactResourceTypes.FilePath, StringComparison.OrdinalIgnoreCase))
             {
                 executionContext.Output(StringUtil.Loc("RMArtifactTypeFileShare"));
-#if !OS_WINDOWS
-                throw new NotSupportedException(StringUtil.Loc("RMFileShareArtifactErrorOnNonWindowsAgent"));
-#else
+#if OS_LINUX
+                string fileShare;
+                if (buildArtifact.Id == 0)
+                {
+                    fileShare = FindLocalMountedPath(new Uri(buildArtifact.Resource.DownloadUrl).LocalPath);
+                }
+                else
+                {
+                    fileShare = FindLocalMountedPath(new Uri(Path.Combine(buildArtifact.Resource.DownloadUrl, buildArtifact.Name)).LocalPath);
+                    if (!Directory.Exists(fileShare))
+                    {
+                        // download path does not exist, log and fall back
+                        var parenthPath = FindLocalMountedPath(new Uri(buildArtifact.Resource.DownloadUrl).LocalPath);
+                        executionContext.Output(StringUtil.Loc("RMArtifactNameDirectoryNotFound", fileShare, parenthPath));
+                        fileShare = parenthPath;
+                    }
+                }
+                executionContext.Output($"FileShare path = {fileShare}");
+                if (!Directory.Exists(fileShare))
+                {
+                    // download path does not exist, raise exception
+                    throw new ArtifactDownloadException(StringUtil.Loc("RMArtifactDirectoryNotFoundError", fileShare, WindowsIdentity.GetCurrent().Name));
+                }
+
+                var fileShareArtifact = new FileShareArtifact();
+                await fileShareArtifact.DownloadArtifactAsync(executionContext, HostContext, artifactDefinition, fileShare, downloadFolderPath);
+#elif OS_WINDOWS
                 string fileShare;
                 if (buildArtifact.Id == 0)
                 {
@@ -204,6 +256,8 @@ namespace Microsoft.VisualStudio.Services.Agent.Worker.Release.Artifacts
 
                 var fileShareArtifact = new FileShareArtifact();
                 await fileShareArtifact.DownloadArtifactAsync(executionContext, HostContext, artifactDefinition, fileShare, downloadFolderPath);
+#else
+            throw new NotSupportedException(StringUtil.Loc("RMFileShareArtifactErrorOnNonWindowsAgent"));
 #endif
             }
             else if (buildArtifactDetails != null
